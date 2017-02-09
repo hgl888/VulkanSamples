@@ -38,17 +38,18 @@ endif()
 
 if (WIN32)
     macro(add_vk_layer target)
-    add_custom_command(OUTPUT VkLayer_${target}.def
-        COMMAND ${PYTHON_CMD} ${PROJECT_SOURCE_DIR}/vk-generate.py ${DisplayServer} win-def-file VkLayer_${target} layer > VkLayer_${target}.def
-        DEPENDS ${PROJECT_SOURCE_DIR}/vk-generate.py ${PROJECT_SOURCE_DIR}/vulkan.py
+    FILE(TO_NATIVE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/VkLayer_${target}.def DEF_FILE)
+    add_custom_target(copy-${target}-def-file ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DEF_FILE} VkLayer_${target}.def
+        VERBATIM
     )
     add_library(VkLayer_${target} SHARED ${ARGN} VkLayer_${target}.def)
-    add_dependencies(VkLayer_${target} generate_tests_dispatch_table_helper VkLayer_utils)
+    add_dependencies(VkLayer_${target} generate_helper_files VkLayer_utils)
     endmacro()
 else()
     macro(add_vk_layer target)
     add_library(VkLayer_${target} SHARED ${ARGN})
-    add_dependencies(VkLayer_${target} generate_tests_dispatch_table_helper VkLayer_utils)
+    add_dependencies(VkLayer_${target} generate_helper_files VkLayer_utils)
     set_target_properties(VkLayer_${target} PROPERTIES LINK_FLAGS "-Wl,-Bsymbolic")
     endmacro()
 endif()
@@ -59,7 +60,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../loader
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/vulkan
     ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_BINARY_DIR}/../../layers
+    ${CMAKE_BINARY_DIR}
 )
 
 if (WIN32)
@@ -72,26 +73,16 @@ else()
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wpointer-arith -Wno-unused-function")
 endif()
 
-add_custom_command(OUTPUT vk_dispatch_table_helper.h
-    COMMAND ${PYTHON_CMD} ${PROJECT_SOURCE_DIR}/vk-generate.py ${DisplayServer} dispatch-table-ops layer > vk_dispatch_table_helper.h
-    DEPENDS ${PROJECT_SOURCE_DIR}/vk-generate.py ${PROJECT_SOURCE_DIR}/vulkan.py)
-
-add_custom_target(generate_tests_dispatch_table_helper DEPENDS
-    vk_dispatch_table_helper.h
-)
-
 set (WRAP_SRCS
        wrap_objects.cpp
-	   ${CMAKE_CURRENT_SOURCE_DIR}/../../layers/vk_layer_table.cpp
-	   ${CMAKE_CURRENT_SOURCE_DIR}/../../layers/vk_layer_extension_utils.cpp
-	   )
+       ${CMAKE_CURRENT_SOURCE_DIR}/../../layers/vk_layer_table.cpp
+       ${CMAKE_CURRENT_SOURCE_DIR}/../../layers/vk_layer_extension_utils.cpp
+       )
 add_vk_layer(wrap_objects ${WRAP_SRCS})
 
 set (TEST_SRCS
        test.cpp
-	   ${CMAKE_CURRENT_SOURCE_DIR}/../../layers/vk_layer_table.cpp
-	   ${CMAKE_CURRENT_SOURCE_DIR}/../../layers/vk_layer_extension_utils.cpp
-	   )
+       ${CMAKE_CURRENT_SOURCE_DIR}/../../layers/vk_layer_table.cpp
+       ${CMAKE_CURRENT_SOURCE_DIR}/../../layers/vk_layer_extension_utils.cpp
+       )
 add_vk_layer(test ${TEST_SRCS})
-
-

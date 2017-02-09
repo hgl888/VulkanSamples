@@ -28,22 +28,30 @@
 #include <list>
 #include <memory>
 
+// For Windows, this #include must come before other Vk headers.
 #include "vk_loader_platform.h"
-#include "vulkan/vk_layer.h"
-#include "vk_layer_config.h"
-#include "vk_layer_extension_utils.h"
-#include "vk_layer_utils.h"
-#include "vk_layer_table.h"
-#include "vk_layer_logging.h"
+
 #include "unique_objects.h"
 #include "vk_dispatch_table_helper.h"
-#include "vk_struct_string_helper_cpp.h"
+#include "vk_layer_config.h"
 #include "vk_layer_data.h"
+#include "vk_layer_extension_utils.h"
+#include "vk_layer_logging.h"
+#include "vk_layer_table.h"
 #include "vk_layer_utils.h"
+#include "vk_layer_utils.h"
+#include "vk_enum_string_helper.h"
+#include "vk_validation_error_messages.h"
+#include "vulkan/vk_layer.h"
+
+// This intentionally includes a cpp file
+#include "vk_safe_struct.cpp"
 
 #include "unique_objects_wrappers.h"
 
 namespace unique_objects {
+
+static uint32_t loader_layer_if_version = CURRENT_LOADER_LAYER_INTERFACE_VERSION;
 
 static void initUniqueObjects(layer_data *instance_data, const VkAllocationCallbacks *pAllocator) {
     layer_debug_actions(instance_data->report_data, instance_data->logging_callback, pAllocator, "google_unique_objects");
@@ -95,10 +103,9 @@ static void checkInstanceRegisterExtensions(const VkInstanceCreateInfo *pCreateI
 #endif
 
         // Check for recognized instance extensions
-        layer_data *instance_data = get_my_data_ptr(get_dispatch_key(instance), layer_data_map);
         if (!white_list(pCreateInfo->ppEnabledExtensionNames[i], kUniqueObjectsSupportedInstanceExtensions)) {
             log_msg(instance_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, __LINE__,
-                    0, "UniqueObjects",
+                    VALIDATION_ERROR_UNDEFINED, "UniqueObjects",
                     "Instance Extension %s is not supported by this layer.  Using this extension may adversely affect "
                     "validation results and/or produce undefined behavior.",
                     pCreateInfo->ppEnabledExtensionNames[i]);
@@ -126,7 +133,7 @@ static void createDeviceRegisterExtensions(const VkDeviceCreateInfo *pCreateInfo
         // Check for recognized device extensions
         if (!white_list(pCreateInfo->ppEnabledExtensionNames[i], kUniqueObjectsSupportedDeviceExtensions)) {
             log_msg(device_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, __LINE__,
-                    0, "UniqueObjects",
+                    VALIDATION_ERROR_UNDEFINED, "UniqueObjects",
                     "Device Extension %s is not supported by this layer.  Using this extension may adversely affect "
                     "validation results and/or produce undefined behavior.",
                     pCreateInfo->ppEnabledExtensionNames[i]);
@@ -252,14 +259,19 @@ VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCall
 }
 
 static const VkLayerProperties globalLayerProps = {"VK_LAYER_GOOGLE_unique_objects",
-                                                   VK_LAYER_API_VERSION, // specVersion
-                                                   1,                    // implementationVersion
+                                                   VK_LAYER_API_VERSION,  // specVersion
+                                                   1,                     // implementationVersion
                                                    "Google Validation Layer"};
 
+/// Declare prototype for these functions
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetPhysicalDeviceProcAddr(VkInstance instance, const char *funcName);
+
 static inline PFN_vkVoidFunction layer_intercept_proc(const char *name) {
-    for (int i = 0; i < sizeof(procmap) / sizeof(procmap[0]); i++) {
-        if (!strcmp(name, procmap[i].name))
-            return procmap[i].pFunc;
+    for (unsigned int i = 0; i < sizeof(procmap) / sizeof(procmap[0]); i++) {
+        if (!strcmp(name, procmap[i].name)) return procmap[i].pFunc;
+    }
+    if (0 == strcmp(name, "vk_layerGetPhysicalDeviceProcAddr")) {
+        return (PFN_vkVoidFunction)GetPhysicalDeviceProcAddr;
     }
     return NULL;
 }
@@ -329,6 +341,17 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetInstanceProcAddr(VkInstance instance
         return NULL;
     }
     return disp_table->GetInstanceProcAddr(instance, funcName);
+}
+
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetPhysicalDeviceProcAddr(VkInstance instance, const char *funcName) {
+    assert(instance);
+
+    layer_data *instance_data = get_my_data_ptr(get_dispatch_key(instance), layer_data_map);
+    VkLayerInstanceDispatchTable *disp_table = instance_data->instance_dispatch_table;
+    if (disp_table->GetPhysicalDeviceProcAddr == NULL) {
+        return NULL;
+    }
+    return disp_table->GetPhysicalDeviceProcAddr(instance, funcName);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL AllocateMemory(VkDevice device, const VkMemoryAllocateInfo *pAllocateInfo,
@@ -425,13 +448,15 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateComputePipelines(VkDevice device, VkPipelin
     VkResult result = my_device_data->device_dispatch_table->CreateComputePipelines(
         device, pipelineCache, createInfoCount, (const VkComputePipelineCreateInfo *)local_pCreateInfos, pAllocator, pPipelines);
     delete[] local_pCreateInfos;
-    if (VK_SUCCESS == result) {
+    {
         uint64_t unique_id = 0;
         std::lock_guard<std::mutex> lock(global_lock);
         for (uint32_t i = 0; i < createInfoCount; ++i) {
-            unique_id = global_unique_id++;
-            my_device_data->unique_id_mapping[unique_id] = reinterpret_cast<uint64_t &>(pPipelines[i]);
-            pPipelines[i] = reinterpret_cast<VkPipeline &>(unique_id);
+            if (pPipelines[i] != VK_NULL_HANDLE) {
+                unique_id = global_unique_id++;
+                my_device_data->unique_id_mapping[unique_id] = reinterpret_cast<uint64_t &>(pPipelines[i]);
+                pPipelines[i] = reinterpret_cast<VkPipeline &>(unique_id);
+            }
         }
     }
     return result;
@@ -481,13 +506,15 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateGraphicsPipelines(VkDevice device, VkPipeli
     VkResult result = my_device_data->device_dispatch_table->CreateGraphicsPipelines(
         device, pipelineCache, createInfoCount, (const VkGraphicsPipelineCreateInfo *)local_pCreateInfos, pAllocator, pPipelines);
     delete[] local_pCreateInfos;
-    if (VK_SUCCESS == result) {
+    {
         uint64_t unique_id = 0;
         std::lock_guard<std::mutex> lock(global_lock);
         for (uint32_t i = 0; i < createInfoCount; ++i) {
-            unique_id = global_unique_id++;
-            my_device_data->unique_id_mapping[unique_id] = reinterpret_cast<uint64_t &>(pPipelines[i]);
-            pPipelines[i] = reinterpret_cast<VkPipeline &>(unique_id);
+            if (pPipelines[i] != VK_NULL_HANDLE) {
+                unique_id = global_unique_id++;
+                my_device_data->unique_id_mapping[unique_id] = reinterpret_cast<uint64_t &>(pPipelines[i]);
+                pPipelines[i] = reinterpret_cast<VkPipeline &>(unique_id);
+            }
         }
     }
     return result;
@@ -638,15 +665,12 @@ VKAPI_ATTR VkResult VKAPI_CALL GetDisplayPlaneSupportedDisplaysKHR(VkPhysicalDev
 VKAPI_ATTR VkResult VKAPI_CALL GetDisplayModePropertiesKHR(VkPhysicalDevice physicalDevice, VkDisplayKHR display,
                                                            uint32_t *pPropertyCount, VkDisplayModePropertiesKHR *pProperties) {
     layer_data *my_map_data = get_my_data_ptr(get_dispatch_key(physicalDevice), layer_data_map);
-    safe_VkDisplayModePropertiesKHR *local_pProperties = NULL;
+    VkDisplayModePropertiesKHR *local_pProperties = NULL;
     {
         std::lock_guard<std::mutex> lock(global_lock);
         display = (VkDisplayKHR)my_map_data->unique_id_mapping[reinterpret_cast<uint64_t &>(display)];
         if (pProperties) {
-            local_pProperties = new safe_VkDisplayModePropertiesKHR[*pPropertyCount];
-            for (uint32_t idx0 = 0; idx0 < *pPropertyCount; ++idx0) {
-                local_pProperties[idx0].initialize(&pProperties[idx0]);
-            }
+            local_pProperties = new VkDisplayModePropertiesKHR[*pPropertyCount];
         }
     }
 
@@ -669,9 +693,29 @@ VKAPI_ATTR VkResult VKAPI_CALL GetDisplayModePropertiesKHR(VkPhysicalDevice phys
     }
     return result;
 }
+
+VKAPI_ATTR VkResult VKAPI_CALL GetDisplayPlaneCapabilitiesKHR(VkPhysicalDevice physicalDevice, VkDisplayModeKHR mode,
+                                                              uint32_t planeIndex, VkDisplayPlaneCapabilitiesKHR *pCapabilities) {
+    layer_data *dev_data = get_my_data_ptr(get_dispatch_key(physicalDevice), layer_data_map);
+    {
+        std::lock_guard<std::mutex> lock(global_lock);
+        auto it = dev_data->unique_id_mapping.find(reinterpret_cast<uint64_t &>(mode));
+        if (it == dev_data->unique_id_mapping.end()) {
+            uint64_t unique_id = global_unique_id++;
+            dev_data->unique_id_mapping[unique_id] = reinterpret_cast<uint64_t &>(mode);
+
+            mode = reinterpret_cast<VkDisplayModeKHR &>(unique_id);
+        } else {
+            mode = reinterpret_cast<VkDisplayModeKHR &>(it->second);
+        }
+    }
+    VkResult result =
+        dev_data->instance_dispatch_table->GetDisplayPlaneCapabilitiesKHR(physicalDevice, mode, planeIndex, pCapabilities);
+    return result;
+}
 #endif
 
-} // namespace unique_objects
+}  // namespace unique_objects
 
 // vk_layer_logging.h expects these to be defined
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugReportCallbackEXT(VkInstance instance,
@@ -721,4 +765,29 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
                                                                                     VkExtensionProperties *pProperties) {
     assert(physicalDevice == VK_NULL_HANDLE);
     return unique_objects::EnumerateDeviceExtensionProperties(VK_NULL_HANDLE, pLayerName, pCount, pProperties);
+}
+
+VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkInstance instance,
+                                                                                           const char *funcName) {
+    return unique_objects::GetPhysicalDeviceProcAddr(instance, funcName);
+}
+
+VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pVersionStruct) {
+    assert(pVersionStruct != NULL);
+    assert(pVersionStruct->sType == LAYER_NEGOTIATE_INTERFACE_STRUCT);
+
+    // Fill in the function pointers if our version is at least capable of having the structure contain them.
+    if (pVersionStruct->loaderLayerInterfaceVersion >= 2) {
+        pVersionStruct->pfnGetInstanceProcAddr = vkGetInstanceProcAddr;
+        pVersionStruct->pfnGetDeviceProcAddr = vkGetDeviceProcAddr;
+        pVersionStruct->pfnGetPhysicalDeviceProcAddr = vk_layerGetPhysicalDeviceProcAddr;
+    }
+
+    if (pVersionStruct->loaderLayerInterfaceVersion < CURRENT_LOADER_LAYER_INTERFACE_VERSION) {
+        unique_objects::loader_layer_if_version = pVersionStruct->loaderLayerInterfaceVersion;
+    } else if (pVersionStruct->loaderLayerInterfaceVersion > CURRENT_LOADER_LAYER_INTERFACE_VERSION) {
+        pVersionStruct->loaderLayerInterfaceVersion = CURRENT_LOADER_LAYER_INTERFACE_VERSION;
+    }
+
+    return VK_SUCCESS;
 }

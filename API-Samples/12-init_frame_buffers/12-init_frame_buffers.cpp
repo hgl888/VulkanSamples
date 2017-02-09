@@ -67,21 +67,19 @@ int sample_main(int argc, char *argv[]) {
     fb_info.layers = 1;
 
     uint32_t i;
-    info.framebuffers = (VkFramebuffer *)malloc(info.swapchainImageCount *
-                                                sizeof(VkFramebuffer));
+    info.framebuffers = (VkFramebuffer *)malloc(info.swapchainImageCount * sizeof(VkFramebuffer));
     assert(info.framebuffers);
 
     for (i = 0; i < info.swapchainImageCount; i++) {
         attachments[0] = info.buffers[i].view;
-        res = vkCreateFramebuffer(info.device, &fb_info, NULL,
-                                  &info.framebuffers[i]);
+        res = vkCreateFramebuffer(info.device, &fb_info, NULL, &info.framebuffers[i]);
         assert(res == VK_SUCCESS);
     }
     execute_end_command_buffer(info);
     execute_queue_command_buffer(info);
     /* VULKAN_KEY_END */
 
-    for (uint32_t i = 0; i < info.swapchainImageCount; i++) {
+    for (i = 0; i < info.swapchainImageCount; i++) {
         vkDestroyFramebuffer(info.device, info.framebuffers[i], NULL);
     }
     free(info.framebuffers);

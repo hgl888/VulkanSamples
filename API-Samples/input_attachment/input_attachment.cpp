@@ -72,10 +72,8 @@ int sample_main(int argc, char *argv[]) {
     init_enumerate_device(info);
 
     VkFormatProperties props;
-    vkGetPhysicalDeviceFormatProperties(info.gpus[0], VK_FORMAT_R8G8B8A8_UNORM,
-                                        &props);
-    if (!(props.optimalTilingFeatures &
-          VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) {
+    vkGetPhysicalDeviceFormatProperties(info.gpus[0], VK_FORMAT_R8G8B8A8_UNORM, &props);
+    if (!(props.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) {
         std::cout << "VK_FORMAT_R8G8B8A8_UNORM format unsupported for input "
                      "attachment\n";
         exit(-1);
@@ -115,8 +113,7 @@ int sample_main(int argc, char *argv[]) {
     image_create_info.samples = NUM_SAMPLES;
     image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
     image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    image_create_info.usage =
-        VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    image_create_info.usage = VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     image_create_info.queueFamilyIndexCount = 0;
     image_create_info.pQueueFamilyIndices = NULL;
     image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -139,8 +136,7 @@ int sample_main(int argc, char *argv[]) {
 
     mem_alloc.allocationSize = mem_reqs.size;
 
-    pass = memory_type_from_properties(info, mem_reqs.memoryTypeBits, 0,
-                                       &mem_alloc.memoryTypeIndex);
+    pass = memory_type_from_properties(info, mem_reqs.memoryTypeBits, 0, &mem_alloc.memoryTypeIndex);
     assert(pass);
 
     res = vkAllocateMemory(info.device, &mem_alloc, NULL, &input_memory);
@@ -150,9 +146,8 @@ int sample_main(int argc, char *argv[]) {
     assert(res == VK_SUCCESS);
 
     // Set the image layout to TRANSFER_DST_OPTIMAL to be ready for clear
-    set_image_layout(info, input_image, VK_IMAGE_ASPECT_COLOR_BIT,
-                     VK_IMAGE_LAYOUT_UNDEFINED,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    set_image_layout(info, input_image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                     VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     VkImageSubresourceRange srRange = {};
     srRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -167,14 +162,12 @@ int sample_main(int argc, char *argv[]) {
     clear_color.float32[2] = 0.0f;
     clear_color.float32[3] = 0.0f;
     // Clear the input attachment image to yellow
-    vkCmdClearColorImage(info.cmd, input_image,
-                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_color, 1,
-                         &srRange);
+    vkCmdClearColorImage(info.cmd, input_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_color, 1, &srRange);
 
     // Set the image layout to SHADER_READONLY_OPTIMAL for use by the shaders
-    set_image_layout(info, input_image, VK_IMAGE_ASPECT_COLOR_BIT,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    set_image_layout(info, input_image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
     VkImageViewCreateInfo view_info = {};
     view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -194,14 +187,13 @@ int sample_main(int argc, char *argv[]) {
 
     VkImageView input_attachment_view;
     view_info.image = input_image;
-    res = vkCreateImageView(info.device, &view_info, NULL,
-                            &input_attachment_view);
+    res = vkCreateImageView(info.device, &view_info, NULL, &input_attachment_view);
     assert(res == VK_SUCCESS);
 
     VkDescriptorImageInfo input_image_info = {};
     input_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     input_image_info.imageView = input_attachment_view;
-    input_image_info.sampler = NULL;
+    input_image_info.sampler = VK_NULL_HANDLE;
 
     VkDescriptorSetLayoutBinding layout_bindings[1];
     layout_bindings[0].binding = 0;
@@ -211,28 +203,24 @@ int sample_main(int argc, char *argv[]) {
     layout_bindings[0].pImmutableSamplers = NULL;
 
     VkDescriptorSetLayoutCreateInfo descriptor_layout = {};
-    descriptor_layout.sType =
-        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    descriptor_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     descriptor_layout.pNext = NULL;
     descriptor_layout.bindingCount = 1;
     descriptor_layout.pBindings = layout_bindings;
 
     info.desc_layout.resize(NUM_DESCRIPTOR_SETS);
-    res = vkCreateDescriptorSetLayout(info.device, &descriptor_layout, NULL,
-                                      info.desc_layout.data());
+    res = vkCreateDescriptorSetLayout(info.device, &descriptor_layout, NULL, info.desc_layout.data());
     assert(res == VK_SUCCESS);
 
     VkPipelineLayoutCreateInfo pPipelineLayoutCreateInfo = {};
-    pPipelineLayoutCreateInfo.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pPipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pPipelineLayoutCreateInfo.pNext = NULL;
     pPipelineLayoutCreateInfo.pushConstantRangeCount = 0;
     pPipelineLayoutCreateInfo.pPushConstantRanges = NULL;
     pPipelineLayoutCreateInfo.setLayoutCount = NUM_DESCRIPTOR_SETS;
     pPipelineLayoutCreateInfo.pSetLayouts = info.desc_layout.data();
 
-    res = vkCreatePipelineLayout(info.device, &pPipelineLayoutCreateInfo, NULL,
-                                 &info.pipeline_layout);
+    res = vkCreatePipelineLayout(info.device, &pPipelineLayoutCreateInfo, NULL, &info.pipeline_layout);
     assert(res == VK_SUCCESS);
 
     // First attachment is the color attachment - clear at the beginning of the
@@ -245,7 +233,7 @@ int sample_main(int argc, char *argv[]) {
     attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     attachments[0].flags = 0;
 
@@ -313,13 +301,11 @@ int sample_main(int argc, char *argv[]) {
 
     uint32_t i;
 
-    info.framebuffers = (VkFramebuffer *)malloc(info.swapchainImageCount *
-                                                sizeof(VkFramebuffer));
+    info.framebuffers = (VkFramebuffer *)malloc(info.swapchainImageCount * sizeof(VkFramebuffer));
 
     for (i = 0; i < info.swapchainImageCount; i++) {
         fb_attachments[0] = info.buffers[i].view;
-        res = vkCreateFramebuffer(info.device, &fbc_info, NULL,
-                                  &info.framebuffers[i]);
+        res = vkCreateFramebuffer(info.device, &fbc_info, NULL, &info.framebuffers[i]);
         assert(res == VK_SUCCESS);
     }
 
@@ -334,8 +320,7 @@ int sample_main(int argc, char *argv[]) {
     descriptor_pool.poolSizeCount = 1;
     descriptor_pool.pPoolSizes = type_count;
 
-    res = vkCreateDescriptorPool(info.device, &descriptor_pool, NULL,
-                                 &info.desc_pool);
+    res = vkCreateDescriptorPool(info.device, &descriptor_pool, NULL, &info.desc_pool);
     assert(res == VK_SUCCESS);
 
     VkDescriptorSetAllocateInfo desc_alloc_info[1];
@@ -346,8 +331,7 @@ int sample_main(int argc, char *argv[]) {
     desc_alloc_info[0].pSetLayouts = info.desc_layout.data();
 
     info.desc_set.resize(1);
-    res = vkAllocateDescriptorSets(info.device, desc_alloc_info,
-                                   info.desc_set.data());
+    res = vkAllocateDescriptorSets(info.device, desc_alloc_info, info.desc_set.data());
     assert(res == VK_SUCCESS);
 
     VkWriteDescriptorSet writes[1];
@@ -377,26 +361,19 @@ int sample_main(int argc, char *argv[]) {
     clear_values.color.float32[3] = 0.2f;
 
     VkSemaphoreCreateInfo imageAcquiredSemaphoreCreateInfo;
-    imageAcquiredSemaphoreCreateInfo.sType =
-        VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    imageAcquiredSemaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     imageAcquiredSemaphoreCreateInfo.pNext = NULL;
     imageAcquiredSemaphoreCreateInfo.flags = 0;
 
-    res = vkCreateSemaphore(info.device, &imageAcquiredSemaphoreCreateInfo,
-                            NULL, &info.imageAcquiredSemaphore);
+    res = vkCreateSemaphore(info.device, &imageAcquiredSemaphoreCreateInfo, NULL, &info.imageAcquiredSemaphore);
     assert(res == VK_SUCCESS);
 
     // Get the index of the next available swapchain image:
-    res = vkAcquireNextImageKHR(info.device, info.swap_chain, UINT64_MAX,
-                                info.imageAcquiredSemaphore, VK_NULL_HANDLE,
+    res = vkAcquireNextImageKHR(info.device, info.swap_chain, UINT64_MAX, info.imageAcquiredSemaphore, VK_NULL_HANDLE,
                                 &info.current_buffer);
     // TODO: Deal with the VK_SUBOPTIMAL_KHR and VK_ERROR_OUT_OF_DATE_KHR
     // return codes
     assert(res == VK_SUCCESS);
-
-    set_image_layout(info, info.buffers[info.current_buffer].image,
-                     VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
     VkRenderPassBeginInfo rp_begin;
     rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -414,8 +391,7 @@ int sample_main(int argc, char *argv[]) {
 
     vkCmdBindPipeline(info.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, info.pipeline);
 
-    vkCmdBindDescriptorSets(info.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            info.pipeline_layout, 0, NUM_DESCRIPTOR_SETS,
+    vkCmdBindDescriptorSets(info.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, info.pipeline_layout, 0, NUM_DESCRIPTOR_SETS,
                             info.desc_set.data(), 0, NULL);
 
     init_viewports(info);
@@ -441,8 +417,7 @@ int sample_main(int argc, char *argv[]) {
     execute_queue_cmdbuf(info, cmd_bufs, drawFence);
 
     do {
-        res =
-            vkWaitForFences(info.device, 1, &drawFence, VK_TRUE, FENCE_TIMEOUT);
+        res = vkWaitForFences(info.device, 1, &drawFence, VK_TRUE, FENCE_TIMEOUT);
     } while (res == VK_TIMEOUT);
     assert(res == VK_SUCCESS);
     vkDestroyFence(info.device, drawFence, NULL);
@@ -451,8 +426,7 @@ int sample_main(int argc, char *argv[]) {
 
     wait_seconds(1);
 
-    if (info.save_images)
-        write_ppm(info, "input_attachment");
+    if (info.save_images) write_ppm(info, "input_attachment");
 
     vkDestroySemaphore(info.device, info.imageAcquiredSemaphore, NULL);
     vkDestroyImageView(info.device, input_attachment_view, NULL);

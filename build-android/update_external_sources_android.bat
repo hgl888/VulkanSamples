@@ -21,7 +21,7 @@ REM
 setlocal EnableDelayedExpansion
 set errorCode=0
 set ANDROID_BUILD_DIR=%~dp0
-set BUILD_DIR=%ANDROID_BUILD_DIR%..
+set BUILD_DIR=%ANDROID_BUILD_DIR%
 set BASE_DIR=%BUILD_DIR%\external
 set GLSLANG_DIR=%BASE_DIR%\glslang
 set SPIRV_TOOLS_DIR=%BASE_DIR%\spirv-tools
@@ -112,9 +112,6 @@ set sync-shaderc=1
 set build-shaderc=1
 
 if %sync-glslang% equ 1 (
-   if exist %GLSLANG_DIR% (
-      rd /S /Q %GLSLANG_DIR%
-   )
    if not exist %GLSLANG_DIR% (
       call:create_glslang
    )
@@ -124,9 +121,6 @@ if %sync-glslang% equ 1 (
 )
 
 if %sync-spirv-tools% equ 1 (
-   if exist %SPIRV_TOOLS_DIR% (
-      rd /S /Q %SPIRV_TOOLS_DIR%
-   )
    if %ERRORLEVEL% neq 0 (goto:error)
    if not exist %SPIRV_TOOLS_DIR% (
       call:create_spirv-tools
@@ -137,9 +131,6 @@ if %sync-spirv-tools% equ 1 (
 )
 
 if %sync-spirv-headers% equ 1 (
-   if exist %SPIRV_HEADERS_DIR% (
-      rd /S /Q %SPIRV_HEADERS_DIR%
-   )
    if %ERRORLEVEL% neq 0 (goto:error)
    if not exist %SPIRV_HEADERS_DIR% (
       call:create_spirv-headers
@@ -150,9 +141,6 @@ if %sync-spirv-headers% equ 1 (
 )
 
 if %sync-shaderc% equ 1 (
-   if exist %SHADERC_DIR% (
-      rd /S /Q %SHADERC_DIR%
-   )
    if not exist %SHADERC_DIR% (
       call:create_shaderc
    )
@@ -189,9 +177,9 @@ REM // ======== Functions ======== //
 :create_glslang
    echo.
    echo Creating local glslang repository %GLSLANG_DIR%
-   mkdir %GLSLANG_DIR%
+   if not exist "%GLSLANG_DIR%\" mkdir %GLSLANG_DIR%
    cd %GLSLANG_DIR%
-   git clone https://github.com/KhronosGroup/glslang.git .
+   git clone https://android.googlesource.com/platform/external/shaderc/glslang .
    git checkout %GLSLANG_REVISION%
    if not exist %GLSLANG_DIR%\SPIRV (
       echo glslang source download failed!
@@ -214,9 +202,9 @@ goto:eof
 :create_spirv-tools
    echo.
    echo Creating local spirv-tools repository %SPIRV_TOOLS_DIR%
-   mkdir %SPIRV_TOOLS_DIR%
+   if not exist "%SPIRV_TOOLS_DIR%\" mkdir %SPIRV_TOOLS_DIR%
    cd %SPIRV_TOOLS_DIR%
-   git clone https://github.com/KhronosGroup/SPIRV-Tools.git .
+   git clone https://android.googlesource.com/platform/external/shaderc/spirv-tools .
    git checkout %SPIRV_TOOLS_REVISION%
    if not exist %SPIRV_TOOLS_DIR%\source (
       echo spirv-tools source download failed!
@@ -239,9 +227,9 @@ goto:eof
 :create_spirv-headers
    echo.
    echo Creating local spirv-headers repository %SPIRV_HEADERS_DIR%
-   mkdir %SPIRV_HEADERS_DIR%
+   if not exist "%SPIRV_HEADERS_DIR%\" mkdir %SPIRV_HEADERS_DIR%
    cd %SPIRV_HEADERS_DIR%
-   git clone https://github.com/KhronosGroup/SPIRV-Headers.git .
+   git clone https://android.googlesource.com/platform/external/shaderc/spirv-headers .
    git checkout %SPIRV_HEADERS_REVISION%
    if not exist %SPIRV_HEADERS_DIR%\include (
       echo spirv-headers source download failed!
@@ -264,9 +252,9 @@ goto:eof
 :create_shaderc
    echo.
    echo Creating local shaderc repository %SHADERC_DIR%
-   mkdir %SHADERC_DIR%
+   if not exist "%SHADERC_DIR%\" mkdir %SHADERC_DIR%
    cd %SHADERC_DIR%
-   git clone https://github.com/google/shaderc.git .
+   git clone https://android.googlesource.com/platform/external/shaderc/shaderc .
    git checkout %SHADERC_REVISION%
    if not exist %SHADERC_DIR%\libshaderc (
       echo shaderc source download failed!

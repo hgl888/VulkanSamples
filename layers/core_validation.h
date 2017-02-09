@@ -44,9 +44,6 @@
 #endif
 #endif
 
-// Enable mem_tracker merged code
-#define MTMERGE 1
-
 #pragma once
 #include "core_validation_error_enums.h"
 #include "vk_validation_error_messages.h"
@@ -71,15 +68,34 @@
  */
 struct CHECK_DISABLED {
     bool command_buffer_state;
-    bool destroy_buffer_view; // Skip validation at DestroyBufferView time
-    bool object_in_use;       // Skip all object in_use checking
-    bool idle_descriptor_set; // Skip check to verify that descriptor set is no in-use
-    bool push_constant_range; // Skip push constant range checks
-    bool free_descriptor_sets; // Skip validation prior to vkFreeDescriptorSets()
-    bool allocate_descriptor_sets; // Skip validation prior to vkAllocateDescriptorSets()
+    bool create_descriptor_set_layout;
+    bool destroy_buffer_view;       // Skip validation at DestroyBufferView time
+    bool destroy_image_view;        // Skip validation at DestroyImageView time
+    bool destroy_pipeline;          // Skip validation at DestroyPipeline time
+    bool destroy_descriptor_pool;   // Skip validation at DestroyDescriptorPool time
+    bool destroy_framebuffer;       // Skip validation at DestroyFramebuffer time
+    bool destroy_renderpass;        // Skip validation at DestroyRenderpass time
+    bool destroy_image;             // Skip validation at DestroyImage time
+    bool destroy_sampler;           // Skip validation at DestroySampler time
+    bool destroy_command_pool;      // Skip validation at DestroyCommandPool time
+    bool destroy_event;             // Skip validation at DestroyEvent time
+    bool free_memory;               // Skip validation at FreeMemory time
+    bool object_in_use;             // Skip all object in_use checking
+    bool idle_descriptor_set;       // Skip check to verify that descriptor set is no in-use
+    bool push_constant_range;       // Skip push constant range checks
+    bool free_descriptor_sets;      // Skip validation prior to vkFreeDescriptorSets()
+    bool allocate_descriptor_sets;  // Skip validation prior to vkAllocateDescriptorSets()
+    bool update_descriptor_sets;    // Skip validation prior to vkUpdateDescriptorSets()
+    bool wait_for_fences;
+    bool get_fence_state;
+    bool queue_wait_idle;
+    bool device_wait_idle;
+    bool destroy_fence;
+    bool destroy_semaphore;
+    bool destroy_query_pool;
+    bool get_query_pool_results;
+    bool destroy_buffer;
 };
-
-#if MTMERGE
 
 /*
  * MTMTODO : Update this comment
@@ -117,20 +133,14 @@ struct MT_FB_ATTACHMENT_INFO {
     VkImage image;
     VkDeviceMemory mem;
 };
-#endif
 
 struct GENERIC_HEADER {
     VkStructureType sType;
     const void *pNext;
 };
 
-struct IMAGE_LAYOUT_NODE {
-    VkImageLayout layout;
-    VkFormat format;
-};
-
 class PHYS_DEV_PROPERTIES_NODE {
-  public:
+   public:
     VkPhysicalDeviceProperties properties;
     std::vector<VkQueueFamilyProperties> queue_family_properties;
 };
@@ -138,7 +148,7 @@ class PHYS_DEV_PROPERTIES_NODE {
 enum FENCE_STATE { FENCE_UNSIGNALED, FENCE_INFLIGHT, FENCE_RETIRED };
 
 class FENCE_NODE {
-  public:
+   public:
     VkFence fence;
     VkFenceCreateInfo createInfo;
     std::pair<VkQueue, uint64_t> signaler;
@@ -149,42 +159,42 @@ class FENCE_NODE {
 };
 
 class SEMAPHORE_NODE : public BASE_NODE {
-  public:
+   public:
     std::pair<VkQueue, uint64_t> signaler;
     bool signaled;
 };
 
-class EVENT_NODE : public BASE_NODE {
-  public:
+class EVENT_STATE : public BASE_NODE {
+   public:
     int write_in_use;
     bool needsSignaled;
     VkPipelineStageFlags stageMask;
 };
 
-class QUEUE_NODE {
-  public:
+class QUEUE_STATE {
+   public:
     VkQueue queue;
     uint32_t queueFamilyIndex;
     std::unordered_map<VkEvent, VkPipelineStageFlags> eventToStageMap;
-    std::unordered_map<QueryObject, bool> queryToStateMap; // 0 is unavailable, 1 is available
+    std::unordered_map<QueryObject, bool> queryToStateMap;  // 0 is unavailable, 1 is available
 
     uint64_t seq;
     std::deque<CB_SUBMISSION> submissions;
 };
 
 class QUERY_POOL_NODE : public BASE_NODE {
-  public:
+   public:
     VkQueryPoolCreateInfo createInfo;
 };
 
-class FRAMEBUFFER_NODE : public BASE_NODE {
-  public:
+class FRAMEBUFFER_STATE : public BASE_NODE {
+   public:
     VkFramebuffer framebuffer;
     safe_VkFramebufferCreateInfo createInfo;
     safe_VkRenderPassCreateInfo renderPassCreateInfo;
     std::unordered_set<VkCommandBuffer> referencingCmdBuffers;
     std::vector<MT_FB_ATTACHMENT_INFO> attachments;
-    FRAMEBUFFER_NODE(VkFramebuffer fb, const VkFramebufferCreateInfo *pCreateInfo, const VkRenderPassCreateInfo *pRPCI)
+    FRAMEBUFFER_STATE(VkFramebuffer fb, const VkFramebufferCreateInfo *pCreateInfo, const VkRenderPassCreateInfo *pRPCI)
         : framebuffer(fb), createInfo(pCreateInfo), renderPassCreateInfo(pRPCI){};
 };
 
@@ -193,22 +203,14 @@ struct COMMAND_POOL_NODE : public BASE_NODE {
     VkCommandPoolCreateFlags createFlags;
     uint32_t queueFamilyIndex;
     // TODO: why is this std::list?
-    std::list<VkCommandBuffer> commandBuffers; // container of cmd buffers allocated from this pool
+    std::list<VkCommandBuffer> commandBuffers;  // container of cmd buffers allocated from this pool
 };
 
 // Stuff from Device Limits Layer
 enum CALL_STATE {
-    UNCALLED,      // Function has not been called
-    QUERY_COUNT,   // Function called once to query a count
-    QUERY_DETAILS, // Function called w/ a count to query details
-};
-
-struct INSTANCE_STATE {
-    // Track the call state and array size for physical devices
-    CALL_STATE vkEnumeratePhysicalDevicesState;
-    uint32_t physical_devices_count;
-    CHECK_DISABLED disabled;
-    INSTANCE_STATE() : vkEnumeratePhysicalDevicesState(UNCALLED), physical_devices_count(0), disabled{} {};
+    UNCALLED,       // Function has not been called
+    QUERY_COUNT,    // Function called once to query a count
+    QUERY_DETAILS,  // Function called w/ a count to query details
 };
 
 struct PHYSICAL_DEVICE_STATE {
@@ -218,17 +220,41 @@ struct PHYSICAL_DEVICE_STATE {
     CALL_STATE vkGetPhysicalDeviceLayerPropertiesState = UNCALLED;
     CALL_STATE vkGetPhysicalDeviceExtensionPropertiesState = UNCALLED;
     CALL_STATE vkGetPhysicalDeviceFeaturesState = UNCALLED;
+    CALL_STATE vkGetPhysicalDeviceSurfaceCapabilitiesKHRState = UNCALLED;
+    CALL_STATE vkGetPhysicalDeviceSurfacePresentModesKHRState = UNCALLED;
+    CALL_STATE vkGetPhysicalDeviceSurfaceFormatsKHRState = UNCALLED;
     VkPhysicalDeviceFeatures features = {};
     VkPhysicalDevice phys_device = VK_NULL_HANDLE;
     std::vector<VkQueueFamilyProperties> queue_family_properties;
+    VkSurfaceCapabilitiesKHR surfaceCapabilities = {};
+    std::vector<VkPresentModeKHR> present_modes;
+    std::vector<VkSurfaceFormatKHR> surface_formats;
 };
+
+struct GpuQueue {
+    VkPhysicalDevice gpu;
+    uint32_t queue_family_index;
+};
+
+inline bool operator==(GpuQueue const &lhs, GpuQueue const &rhs) {
+    return (lhs.gpu == rhs.gpu && lhs.queue_family_index == rhs.queue_family_index);
+}
+
+namespace std {
+template <>
+struct hash<GpuQueue> {
+    size_t operator()(GpuQueue gq) const throw() {
+        return hash<uint64_t>()((uint64_t)(gq.gpu)) ^ hash<uint32_t>()(gq.queue_family_index);
+    }
+};
+}
 
 struct SURFACE_STATE {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     SWAPCHAIN_NODE *swapchain = nullptr;
     SWAPCHAIN_NODE *old_swapchain = nullptr;
+    std::unordered_map<GpuQueue, bool> gpu_queue_support;
 
     SURFACE_STATE() {}
-    SURFACE_STATE(VkSurfaceKHR surface)
-        : surface(surface) {}
+    SURFACE_STATE(VkSurfaceKHR surface) : surface(surface) {}
 };
