@@ -67,6 +67,8 @@ include_directories(
     "${PROJECT_SOURCE_DIR}/layers"
     ${GLSLANG_SPIRV_INCLUDE_DIR}
     ${LIBGLM_INCLUDE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}
     )
 
 if (NOT WIN32)
@@ -114,6 +116,14 @@ endif()
 if(WIN32)
    target_link_libraries(vk_layer_validation_tests ${LIBVK} gtest gtest_main VkLayer_utils ${GLSLANG_LIBRARIES})
 endif()
+add_dependencies(vk_layer_validation_tests
+   VkLayer_core_validation
+   VkLayer_object_tracker
+   VkLayer_swapchain
+   VkLayer_threading
+   VkLayer_unique_objects
+   VkLayer_parameter_validation
+)
 
 add_executable(vk_loader_validation_tests loader_validation_tests.cpp ${COMMON_CPP})
 set_target_properties(vk_loader_validation_tests

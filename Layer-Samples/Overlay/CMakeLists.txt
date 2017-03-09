@@ -49,13 +49,13 @@ add_custom_command(OUTPUT ${SHADER_DIR}/${SFILE}-frag.spv
 message(STATUS "Shader dir: ${SHADER_DIR}")
 message(STATUS "Cxxflags: ${CMAKE_CXX_FLAGS}")
 
-if (EXISTS "${CMAKE_SOURCE_DIR}/layers")
+if(EXISTS "${CMAKE_SOURCE_DIR}/layers")
     set(LAYERS_LOC ${CMAKE_SOURCE_DIR})
     set(LAYER_UTILS_LIB VkLayer_utils)
 else()
     set(LAYERS_LOC ${CMAKE_SOURCE_DIR}/../source)
     find_library(LAYER_UTILS_LIB NAMES VkLayer_utils
-        HINTS "${CMAKE_SOURCE_DIR}/../bin" "${CMAKE_SOURCE_DIR}/../x86_64/lib" )
+        HINTS "${CMAKE_SOURCE_DIR}/../${LIBSOURCE_DIR}" "${CMAKE_SOURCE_DIR}/../x86_64/lib" )
 endif()
 
 set(UTILDIR "${CMAKE_SOURCE_DIR}/Layer-Samples/utils")
@@ -82,7 +82,9 @@ else()
 endif()
 
 target_link_libraries(VKLayer_overlay ${LAYER_UTILS_LIB})
-add_dependencies(VKLayer_overlay generate_helper_files VkLayer_utils)
+if(EXISTS "${CMAKE_SOURCE_DIR}/layers")
+    add_dependencies(VKLayer_overlay generate_helper_files VkLayer_utils)
+endif()
 set_target_properties(VKLayer_overlay PROPERTIES CXX_FLAGS "-Wno-unused-function")
 
 if(SDK_INCLUDE_PATH)
